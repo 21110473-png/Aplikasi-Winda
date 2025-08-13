@@ -402,11 +402,22 @@ st.markdown(header_html, unsafe_allow_html=True)
 def generate_pdf_profil_siswa(nama, data_siswa_dict, klaster, cluster_desc_map):
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font("Arial", "B", 16)
+    # Menambahkan font DejaVu yang akan diinstall melalui packages.txt
+    try:
+        pdf.add_font('DejaVu', '', 'DejaVuSans.ttf', uni=True)
+        pdf.add_font('DejaVu', 'B', 'DejaVuSans-Bold.ttf', uni=True)
+        pdf.add_font('DejaVu', 'I', 'DejaVuSans-Oblique.ttf', uni=True)
+        base_font = "DejaVu"
+    except RuntimeError:
+        st.warning("Font DejaVu tidak ditemukan. Menggunakan font standar 'Arial'. Tampilan PDF mungkin tidak optimal.")
+        base_font = "Arial"
+
+    pdf.set_font(base_font, "B", 16)
     pdf.set_text_color(44, 47, 127)
     pdf.cell(0, 10, "PROFIL SISWA - HASIL KLASTERISASI", ln=True, align='C')
     pdf.ln(10)
-    pdf.set_font("Arial", "", 10)
+
+    pdf.set_font(base_font, "", 10)
     pdf.set_text_color(0, 0, 0)
     keterangan_umum = (
         "Laporan ini menyajikan profil detail siswa berdasarkan hasil pengelompokan "
@@ -417,16 +428,19 @@ def generate_pdf_profil_siswa(nama, data_siswa_dict, klaster, cluster_desc_map):
     )
     pdf.multi_cell(0, 5, keterangan_umum, align='J')
     pdf.ln(5)
-    pdf.set_font("Arial", "B", 12)
+
+    pdf.set_font(base_font, "B", 12)
     pdf.cell(0, 8, f"Nama Siswa: {nama}", ln=True)
     pdf.cell(0, 8, f"Klaster Hasil: {klaster}", ln=True)
     pdf.ln(3)
+
     klaster_desc = cluster_desc_map.get(klaster, "Deskripsi klaster tidak tersedia.")
-    pdf.set_font("Arial", "I", 10)
+    pdf.set_font(base_font, "I", 10)
     pdf.set_text_color(80, 80, 80)
     pdf.multi_cell(0, 5, f"Karakteristik Klaster {klaster}: {klaster_desc}", align='J')
     pdf.ln(5)
-    pdf.set_font("Arial", "", 10)
+
+    pdf.set_font(base_font, "", 10)
     pdf.set_text_color(0, 0, 0)
     ekskul_diikuti = []
     ekskul_cols_full_names = ["Ekstrakurikuler Komputer", "Ekstrakurikuler Pertanian", "Ekstrakurikuler Menjahit", "Ekstrakurikuler Pramuka"]
@@ -445,7 +459,9 @@ def generate_pdf_profil_siswa(nama, data_siswa_dict, klaster, cluster_desc_map):
     }
     for key, val in display_data.items():
         pdf.cell(0, 7, f"{key}: {val}", ln=True)
+
     try:
+        # FPDF.output() untuk st.download_button membutuhkan bytes
         pdf_output = pdf.output(dest='S').encode('latin-1')
         return bytes(pdf_output)
     except Exception as e:
@@ -547,6 +563,9 @@ if 'current_menu' not in st.session_state:
     st.session_state.current_menu = None
 if 'kepsek_current_menu' not in st.session_state:
     st.session_state.kepsek_current_menu = "Lihat Hasil Klasterisasi"
+# **PERBAIKAN**: Tambahkan state untuk menyimpan data bagi Kepala Sekolah
+if 'data_untuk_kepsek' not in st.session_state:
+    st.session_state.data_untuk_kepsek = None
 
 
 # --- FUNGSI HALAMAN UTAMA (UNTUK SETIAP PERAN) ---
@@ -568,8 +587,8 @@ def show_operator_tu_page():
 
     for option in menu_options:
         icon_map = {
-            "Unggah Data": "⬆",
-            "Praproses & Normalisasi Data": "⚙",
+            "Unggah Data": "⬆️",
+            "Praproses & Normalisasi Data": "⚙️",
             "Klasterisasi Data K-Prototypes": "📊",
             "Prediksi Klaster Siswa Baru": "🔮",
             "Visualisasi & Profil Klaster": "📈",
@@ -728,14 +747,10 @@ def show_operator_tu_page():
                         with st.expander(f"Klaster {cluster_id}"):
                             st.markdown(desc)
                     
-                    try:
-                        df_final_for_kepsek = df_final.copy()
-                        df_final_for_kepsek['Kehadiran'] = df_final_for_kepsek['Kehadiran'].apply(lambda x: f"{x:.2%}")
-                        file_name = "Data MA-ALHIKMAH.xlsx"
-                        df_final_for_kepsek.to_excel(file_name, index=False)
-                        st.success(f"Hasil klasterisasi berhasil disimpan ke file '{file_name}' untuk diakses oleh Kepala Sekolah.")
-                    except Exception as e:
-                        st.error(f"Gagal menyimpan file Excel untuk Kepala Sekolah: {e}")
+                    # **PERBAIKAN**: Simpan hasil ke session_state, bukan file
+                    st.session_state.data_untuk_kepsek = df_final.copy()
+                    st.success("Hasil klasterisasi telah disimpan dalam sesi dan siap diakses oleh Kepala Sekolah.")
+
 
     elif st.session_state.current_menu == "Prediksi Klaster Siswa Baru":
         st.header("Prediksi Klaster untuk Siswa Baru")
@@ -829,7 +844,7 @@ def show_operator_tu_page():
             """, unsafe_allow_html=True)
             st.markdown("---")
             k_visual = st.slider("Jumlah Klaster (K) untuk visualisasi", 2, 6, value=st.session_state.n_clusters,
-                                 help="Geser untuk memilih jumlah klaster yang ingin Anda visualisasikan. Ini akan melatih ulang model sementara untuk tujuan visualisasi.")
+                                    help="Geser untuk memilih jumlah klaster yang ingin Anda visualisasikan. Ini akan melatih ulang model sementara untuk tujuan visualisasi.")
             df_for_visual_clustering, kproto_visual, cat_indices_visual = run_kprototypes_clustering(
                 st.session_state.df_preprocessed_for_clustering, k_visual
             )
@@ -993,32 +1008,34 @@ def show_operator_tu_page():
 
 
 def show_kepala_sekolah_page():
-    file_path = "Data MA-ALHIKMAH.xlsx"
-    df_kepsek_load = None
-    if os.path.exists(file_path):
+    # **PERBAIKAN**: Baca data dari session_state, bukan dari file.
+    df_kepsek_load = st.session_state.get('data_untuk_kepsek')
+
+    if df_kepsek_load is not None:
         try:
-            df_kepsek_load = pd.read_excel(file_path, engine='openpyxl')
             st.session_state.df_clustered = df_kepsek_load
             
-            if 'df_original' not in st.session_state or st.session_state.df_original is None:
-                df_original_from_clustered = df_kepsek_load.copy()
-                if df_original_from_clustered['Kehadiran'].dtype == 'object':
-                    df_original_from_clustered['Kehadiran'] = df_original_from_clustered['Kehadiran'].str.rstrip('%').astype('float') / 100
-                st.session_state.df_original = df_original_from_clustered.drop(columns=['Klaster'], errors='ignore')
+            # Buat df_original dari data yang ada di session state
+            df_original_from_clustered = df_kepsek_load.copy()
+            # Jika kolom kehadiran sudah jadi string persen, kembalikan ke float
+            if 'Kehadiran' in df_original_from_clustered.columns and df_original_from_clustered['Kehadiran'].dtype == 'object':
+                 # Hapus '%' dan konversi ke float, tangani error jika ada
+                df_original_from_clustered['Kehadiran'] = pd.to_numeric(df_original_from_clustered['Kehadiran'].astype(str).str.rstrip('%'), errors='coerce') / 100.0
+            st.session_state.df_original = df_original_from_clustered.drop(columns=['Klaster'], errors='ignore')
 
-                n_clusters_kepsek = len(df_kepsek_load['Klaster'].unique())
-                st.session_state.n_clusters = n_clusters_kepsek
-                
-                df_preprocessed, scaler = preprocess_data(st.session_state.df_original)
-                if df_preprocessed is not None:
-                    df_preprocessed['Klaster'] = df_kepsek_load['Klaster']
-                    st.session_state.cluster_characteristics_map = generate_cluster_descriptions(
-                        df_preprocessed, n_clusters_kepsek, NUMERIC_COLS, CATEGORICAL_COLS
-                    )
-        except Exception as e:
-            st.error(f"Terjadi kesalahan saat membaca file '{file_path}': {e}.")
-            st.session_state.df_clustered = None
+            n_clusters_kepsek = len(df_kepsek_load['Klaster'].unique())
+            st.session_state.n_clusters = n_clusters_kepsek
             
+            df_preprocessed, scaler = preprocess_data(st.session_state.df_original)
+            if df_preprocessed is not None:
+                df_preprocessed['Klaster'] = df_kepsek_load['Klaster']
+                st.session_state.cluster_characteristics_map = generate_cluster_descriptions(
+                    df_preprocessed, n_clusters_kepsek, NUMERIC_COLS, CATEGORICAL_COLS
+                )
+        except Exception as e:
+            st.error(f"Terjadi kesalahan saat memproses data klasterisasi: {e}")
+            st.session_state.df_clustered = None
+
     st.sidebar.title("MENU NAVIGASI")
     st.sidebar.markdown("---")
     
@@ -1087,8 +1104,9 @@ def show_kepala_sekolah_page():
     
     st.title("👨‍💼 Dasbor Kepala Sekolah")
     
+    # **PERBAIKAN**: Ubah pesan warning
     if st.session_state.df_clustered is None or st.session_state.df_clustered.empty:
-        st.warning(f"File hasil klasterisasi 'Data MA-ALHIKMAH.xlsx' tidak ditemukan atau tidak valid. Mohon minta Operator TU untuk memproses dan menyimpan hasilnya terlebih dahulu.")
+        st.warning("Data hasil klasterisasi belum tersedia. Mohon minta Operator TU untuk login dan menjalankan proses klasterisasi terlebih dahulu.")
         return
 
     if st.session_state.kepsek_current_menu == "Lihat Hasil Klasterisasi":
@@ -1097,7 +1115,9 @@ def show_kepala_sekolah_page():
         st.markdown("---")
         
         st.subheader("Data Hasil Klasterisasi")
-        st.dataframe(st.session_state.df_clustered, use_container_width=True, height=300)
+        df_display_kepsek = st.session_state.df_clustered.copy()
+        df_display_kepsek["Kehadiran"] = df_display_kepsek["Kehadiran"].apply(lambda x: f"{x:.2%}")
+        st.dataframe(df_display_kepsek, use_container_width=True, height=300)
         
         st.markdown("---")
         st.subheader("Ringkasan Klaster: Jumlah Siswa per Kelompok")
@@ -1136,7 +1156,7 @@ def show_kepala_sekolah_page():
 
                 st.markdown("<div style='margin-top: 20px;'></div>", unsafe_allow_html=True)
                 st.write("Kecenderungan Ekstrakurikuler (Modus):")
-                mode_ekskul_display = cluster_data[CATEGORICAL_COLS].mode().iloc[0].apply(lambda x: 'Ya' if x == '1' else 'Tidak')
+                mode_ekskul_display = cluster_data[CATEGORICAL_COLS].mode().iloc[0].apply(lambda x: 'Ya' if str(x) == '1' else 'Tidak')
                 st.dataframe(mode_ekskul_display.to_frame(name='Paling Umum'), use_container_width=True)
                 
                 st.markdown("<div style='margin-top: 20px;'></div>", unsafe_allow_html=True)
@@ -1148,7 +1168,7 @@ def show_kepala_sekolah_page():
                 
                 if df_preprocessed_temp is not None:
                     values_for_plot_numeric = cluster_data_norm[NUMERIC_COLS].mean().tolist()
-                    values_for_plot_ekskul = [int(cluster_data_norm[col].mode().iloc[0]) for col in CATEGORICAL_COLS]
+                    values_for_plot_ekskul = [int(float(cluster_data_norm[col].mode().iloc[0])) for col in CATEGORICAL_COLS]
                     values_for_plot = values_for_plot_numeric + values_for_plot_ekskul
                     labels_for_plot = ["Nilai (Norm)", "Kehadiran (Norm)"] + [col.replace("Ekstrakurikuler ", "Ekskul\n") for col in CATEGORICAL_COLS]
                     
@@ -1208,11 +1228,11 @@ def show_kepala_sekolah_page():
                 st.markdown(f"Jenis Kelamin: {siswa_data.get('JK', '-')}")
                 st.markdown(f"Kelas: {siswa_data.get('Kelas', '-')}")
                 st.markdown(f"Rata-rata Nilai Akademik: {siswa_data.get('Rata Rata Nilai Akademik', '-'):.2f}")
-                st.markdown(f"Persentase Kehadiran: {siswa_data.get('Kehadiran', '-')}")
+                st.markdown(f"Persentase Kehadiran: {siswa_data.get('Kehadiran', '-'):.2%}")
                 st.markdown("#### Ekstrakurikuler yang Diikuti")
                 ekskul_diikuti_str = []
                 for col in CATEGORICAL_COLS:
-                    if siswa_data.get(col, 0) == 1 or siswa_data.get(col, '0') == '1':
+                    if siswa_data.get(col, 0) == 1 or str(siswa_data.get(col, '0')) == '1':
                         ekskul_diikuti_str.append(col.replace("Ekstrakurikuler ", ""))
                 if ekskul_diikuti_str:
                     for ekskul in ekskul_diikuti_str:
@@ -1225,10 +1245,10 @@ def show_kepala_sekolah_page():
                 labels_siswa_plot = ["Rata-rata\nNilai Akademik", "Kehadiran (%)"] + [col.replace("Ekstrakurikuler ", "Ekskul\n") for col in CATEGORICAL_COLS]
                 values_siswa_plot_numeric = [
                     siswa_data.get("Rata Rata Nilai Akademik", 0),
-                    float(str(siswa_data.get("Kehadiran", "0%")).replace('%',''))
+                    siswa_data.get("Kehadiran", 0) * 100
                 ]
                 values_siswa_plot_ekskul = [
-                    siswa_data.get(col, 0) * 100 for col in CATEGORICAL_COLS
+                    int(float(siswa_data.get(col, 0))) * 100 for col in CATEGORICAL_COLS
                 ]
                 values_siswa_plot = values_siswa_plot_numeric + values_siswa_plot_ekskul
                 fig, ax = plt.subplots(figsize=(10, 6))
@@ -1242,87 +1262,34 @@ def show_kepala_sekolah_page():
                 plt.xticks(rotation=0)
                 plt.tight_layout()
                 st.pyplot(fig)
-            st.markdown("---")
-            st.subheader(f"Siswa Lain di Klaster {klaster_siswa_terpilih}:")
-            siswa_lain_di_klaster = df_kepsek[
-                (df_kepsek['Klaster'] == klaster_siswa_terpilih) &
-                (df_kepsek['Nama'] != nama_terpilih_kepsek)
-            ]
-            if not siswa_lain_di_klaster.empty:
-                st.write("Berikut adalah daftar siswa lain yang juga tergolong dalam klaster ini:")
-                display_cols_for_others = ["No", "Nama", "JK", "Kelas", "Rata Rata Nilai Akademik", "Kehadiran"]
-                st.dataframe(siswa_lain_di_klaster[display_cols_for_others], use_container_width=True)
-            else:
-                st.info("Tidak ada siswa lain dalam klaster ini.")
-            st.markdown("---")
-            st.subheader("Unduh Laporan Profil Siswa (PDF)")
-            if st.session_state.cluster_characteristics_map:
-                if st.button("Generate & Unduh Laporan PDF", key="unduh_pdf_kepsek", help="Klik untuk membuat laporan PDF profil siswa ini."):
-                    with st.spinner("Menyiapkan laporan PDF..."):
-                        siswa_data_for_pdf = siswa_data.drop(labels=["Klaster"]).to_dict()
-                        if isinstance(siswa_data_for_pdf.get('Kehadiran'), str):
-                            siswa_data_for_pdf['Kehadiran'] = float(siswa_data_for_pdf['Kehadiran'].replace('%', '')) / 100
-                        pdf_data_bytes = generate_pdf_profil_siswa(
-                            nama_terpilih_kepsek,
-                            siswa_data_for_pdf,
-                            siswa_data["Klaster"],
-                            st.session_state.cluster_characteristics_map
-                        )
-                    if pdf_data_bytes:
-                        st.success("Laporan PDF berhasil disiapkan!")
-                        st.download_button(
-                            label="Klik di Sini untuk Mengunduh PDF",
-                            data=pdf_data_bytes,
-                            file_name=f"Profil_{nama_terpilih_kepsek.replace(' ', '_')}.pdf",
-                            mime="application/pdf",
-                            key="download_profile_pdf_kepsek_final",
-                            help="Klik ini untuk menyimpan laporan PDF ke perangkat Anda."
-                        )
-            else:
-                st.warning("Data klasterisasi tidak valid untuk membuat profil PDF.")
 
 
-# --- LOGIKA UTAMA APLIKASI UNTUK PEMILIHAN PERAN ---
-
-if st.session_state.role is None:
-    st.sidebar.empty()
+# --- HALAMAN LOGIN ---
+def show_login_page():
     st.markdown("""
-    <div class="login-container">
-        <div class="login-card">
-            <h2>Pilih Peran Anda</h2>
-            <p style='margin-bottom: 25px;'>Selamat datang di sistem pengelompokan siswa. Silakan pilih peran Anda untuk melanjutkan.</p>
-            <div style="display: flex; gap: 20px;">
-                <div style="flex: 1;">
-                    <style>
-                        .st-emotion-cache-199v5-container > button {{
-                            background-color: {PRIMARY_COLOR};
-                            color: white;
-                            width: 100%;
-                            font-size: 1.2em;
-                            padding: 15px 0;
-                            font-weight: bold;
-                        }}
-                    </style>
-                </div>
-            </div>
-        </div>
-    </div>
+        <div class="login-container">
+            <div class="login-card">
+                <h2>Selamat Datang</h2>
+                <p>Silakan pilih peran Anda untuk melanjutkan</p>
+                <div style="margin-top: 2rem; display: flex; justify-content: center; gap: 1rem;">
     """, unsafe_allow_html=True)
     
-    col_tu, col_kepsek = st.columns(2)
-    with col_tu:
-        if st.button("Masuk sebagai **Operator TU**", use_container_width=True, key="login_tu"):
-            st.session_state.role = 'Operator TU'
-            st.session_state.current_menu = "Unggah Data"
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Login sebagai Operator TU ⚙️", use_container_width=True):
+            st.session_state.role = 'operator_tu'
             st.rerun()
-    with col_kepsek:
-        if st.button("Masuk sebagai **Kepala Sekolah**", use_container_width=True, key="login_kepsek"):
-            st.session_state.role = 'Kepala Sekolah'
-            st.session_state.kepsek_current_menu = "Lihat Hasil Klasterisasi"
+    with col2:
+        if st.button("Login sebagai Kepala Sekolah 👨‍💼", use_container_width=True):
+            st.session_state.role = 'kepala_sekolah'
             st.rerun()
-            
-elif st.session_state.role == 'Operator TU':
-    show_operator_tu_page()
 
-elif st.session_state.role == 'Kepala Sekolah':
+    st.markdown("</div></div></div>", unsafe_allow_html=True)
+
+# --- ROUTER UTAMA ---
+if st.session_state.role == 'operator_tu':
+    show_operator_tu_page()
+elif st.session_state.role == 'kepala_sekolah':
     show_kepala_sekolah_page()
+else:
+    show_login_page()
